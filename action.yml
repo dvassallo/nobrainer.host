@@ -170,6 +170,62 @@ runs:
         
         echo "Generated index with $APP_COUNT apps"
 
+    - name: Update helper scripts on server
+      shell: bash
+      run: |
+        # Always update ensure-cert.sh to latest version
+        scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          ${{ github.action_path }}/server-setup/setup.sh \
+          root@${{ inputs.domain }}:/tmp/setup.sh
+        
+        # Extract and update just the ensure-cert.sh script
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          root@${{ inputs.domain }} << 'SCRIPT'
+        # Update ensure-cert.sh with permission fixes
+        cat > /usr/local/bin/ensure-cert.sh << 'CERTSCRIPT'
+        #!/bin/bash
+        set -e
+        SUBDOMAIN=$1
+        DOMAIN=$2
+        EMAIL=$3
+        
+        if [ -z "$SUBDOMAIN" ] || [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
+            echo "Usage: ensure-cert.sh <subdomain> <domain> <email>"
+            exit 1
+        fi
+        
+        FQDN="${SUBDOMAIN}.${DOMAIN}"
+        CERT_PATH="/etc/letsencrypt/live/${FQDN}"
+        
+        if [ -d "$CERT_PATH" ]; then
+            echo "Certificate already exists for ${FQDN}"
+            exit 0
+        fi
+        
+        echo "Obtaining certificate for ${FQDN}..."
+        certbot certonly \
+            --webroot \
+            --webroot-path /var/www/acme-challenge \
+            -d "$FQDN" \
+            --email "$EMAIL" \
+            --agree-tos \
+            --non-interactive \
+            --quiet
+        
+        if [ $? -eq 0 ]; then
+            echo "Certificate obtained successfully for ${FQDN}"
+            chmod 755 /etc/letsencrypt/live/
+            chmod 755 /etc/letsencrypt/archive/
+            chmod 644 /etc/letsencrypt/archive/${FQDN}/*.pem 2>/dev/null || true
+            exit 0
+        else
+            echo "Failed to obtain certificate for ${FQDN}"
+            exit 1
+        fi
+        CERTSCRIPT
+        chmod +x /usr/local/bin/ensure-cert.sh
+        SCRIPT
+
     - name: Deploy apps via rsync
       shell: bash
       run: |
