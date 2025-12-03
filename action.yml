@@ -267,6 +267,19 @@ runs:
         
         echo "Processed certificates for $CERTS_ISSUED apps"
 
+    - name: Fix certificate permissions
+      shell: bash
+      run: |
+        # Fix permissions for ALL certs so nginx workers can read them
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          root@${{ inputs.domain }} << 'FIXPERMS'
+        echo "Fixing certificate permissions..."
+        chmod 755 /etc/letsencrypt/live/ 2>/dev/null || true
+        chmod 755 /etc/letsencrypt/archive/ 2>/dev/null || true
+        find /etc/letsencrypt/archive/ -name "*.pem" -exec chmod 644 {} \; 2>/dev/null || true
+        echo "Certificate permissions fixed"
+        FIXPERMS
+
     - name: Clean up orphaned certificates
       shell: bash
       run: |
