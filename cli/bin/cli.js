@@ -69,9 +69,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dvassallo/nobrainer.host@v1
         with:
-          domain: ${domain}
+          domain: \${{ secrets.DOMAIN || '${domain}' }}
           deploy_key: \${{ secrets.DEPLOY_KEY }}
-          letsencrypt_email: ${email}
+          letsencrypt_email: \${{ secrets.LETSENCRYPT_EMAIL || '${email}' }}
           force_setup: \${{ inputs.force_setup }}
 `;
 }
@@ -108,8 +108,11 @@ Configuration:
   Domain: ${domain}
   Email:  ${email}
 
+These values are set as defaults. You can override them by adding
+DOMAIN and LETSENCRYPT_EMAIL secrets to your GitHub repo.
+
 Next steps:
-  1. Add DEPLOY_KEY secret to your GitHub repo
+  1. Add DEPLOY_KEY secret to your GitHub repo (required)
      (Settings → Secrets → Actions → New repository secret)
      
      Generate a key: ssh-keygen -t ed25519 -f ~/.ssh/nobrainer_deploy -N ""
