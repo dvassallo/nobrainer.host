@@ -144,12 +144,42 @@ This updates your existing workflow file.
 
 The root domain (`https://yourdomain.com`) automatically shows an index of all your apps.
 
-To use a custom landing page, create a `_root/` folder:
+### Custom Landing Page
+
+To fully customize, create `_root/index.html`:
 
 ```
 _root/
 └── index.html    →   https://yourdomain.com
 ```
+
+### Custom Template (recommended)
+
+To customize the design while keeping auto-generated app links, create `_root/index.template.html`:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Apps</title>
+    <style>
+        /* Your custom styles */
+    </style>
+</head>
+<body>
+    <h1>My Apps ({{APP_COUNT}} total)</h1>
+    <div class="apps">
+        {{APPS}}
+    </div>
+    <p>Hosted on {{DOMAIN}}</p>
+</body>
+</html>
+```
+
+**Available placeholders:**
+- `{{APPS}}` — Generated `<a>` links for each app
+- `{{APP_COUNT}}` — Number of apps
+- `{{DOMAIN}}` — Your domain name
 
 ## Troubleshooting
 

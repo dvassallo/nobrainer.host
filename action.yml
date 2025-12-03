@@ -68,11 +68,13 @@ runs:
     - name: Generate app index
       shell: bash
       run: |
-        # Skip if user has a custom _root/index.html
-        if [ -f "_root/index.html" ]; then
+        # Skip if user has a custom _root/index.html (not a template)
+        if [ -f "_root/index.html" ] && [ ! -f "_root/index.template.html" ]; then
           echo "Custom _root/index.html found, skipping generation"
           exit 0
         fi
+        
+        DOMAIN="${{ inputs.domain }}"
         
         # Find all app directories (exclude system folders)
         APPS=$(find . -maxdepth 1 -type d \
@@ -83,9 +85,32 @@ runs:
           ! -name '_root' \
           -printf '%f\n' | sort)
         
-        # Generate _root/index.html
+        # Generate app links HTML
+        APP_COUNT=0
+        APP_LINKS=""
+        for app in $APPS; do
+            APP_LINKS="${APP_LINKS}<a href=\"https://${app}.${DOMAIN}\">${app}</a>\n"
+            APP_COUNT=$((APP_COUNT + 1))
+        done
+        
+        # Handle empty state
+        if [ $APP_COUNT -eq 0 ]; then
+            APP_LINKS='<p class="empty">No apps deployed yet.</p>'
+        fi
+        
         mkdir -p _root
-        cat > _root/index.html << 'HTMLEOF'
+        
+        # Check if user has a template
+        if [ -f "_root/index.template.html" ]; then
+          echo "Using custom template _root/index.template.html"
+          # Replace placeholders in template
+          sed -e "s|{{APPS}}|${APP_LINKS}|g" \
+              -e "s|{{APP_COUNT}}|${APP_COUNT}|g" \
+              -e "s|{{DOMAIN}}|${DOMAIN}|g" \
+              _root/index.template.html > _root/index.html
+        else
+          # Use default template
+          cat > _root/index.html << HTMLEOF
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -145,28 +170,13 @@ runs:
             <div class="container">
                 <h1>Apps</h1>
                 <div class="apps">
-        HTMLEOF
-        
-        # Add links for each app
-        DOMAIN="${{ inputs.domain }}"
-        APP_COUNT=0
-        for app in $APPS; do
-            echo "            <a href=\"https://${app}.${DOMAIN}\">${app}</a>" >> _root/index.html
-            APP_COUNT=$((APP_COUNT + 1))
-        done
-        
-        # Handle empty state
-        if [ $APP_COUNT -eq 0 ]; then
-            echo '            <p class="empty">No apps deployed yet.</p>' >> _root/index.html
-        fi
-        
-        # Close HTML
-        cat >> _root/index.html << 'HTMLEOF'
+                    ${APP_LINKS}
                 </div>
             </div>
         </body>
         </html>
         HTMLEOF
+        fi
         
         echo "Generated index with $APP_COUNT apps"
 
