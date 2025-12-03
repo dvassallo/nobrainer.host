@@ -162,7 +162,6 @@ jobs:
 | `domain` | Yes | Your domain name |
 | `deploy_key` | Yes | SSH private key for server access |
 | `letsencrypt_email` | Yes | Email for SSL certificate notifications |
-| `force_setup` | No | Force re-run server setup (default: false) |
 
 ## Updating Domain/Email
 

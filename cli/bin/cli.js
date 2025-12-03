@@ -57,10 +57,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      force_setup:
-        description: 'Force server setup'
-        type: boolean
 
 jobs:
   deploy:
@@ -72,7 +68,6 @@ jobs:
           domain: \${{ secrets.DOMAIN || '${domain}' }}
           deploy_key: \${{ secrets.DEPLOY_KEY }}
           letsencrypt_email: \${{ secrets.LETSENCRYPT_EMAIL || '${email}' }}
-          force_setup: \${{ inputs.force_setup }}
 `;
 }
 

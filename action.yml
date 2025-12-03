@@ -16,10 +16,6 @@ inputs:
   letsencrypt_email:
     description: 'Email for Let''s Encrypt SSL certificate notifications'
     required: true
-  force_setup:
-    description: 'Force re-run server setup even if already configured'
-    required: false
-    default: 'false'
 
 runs:
   using: 'composite'
@@ -32,27 +28,10 @@ runs:
         chmod 600 ~/.ssh/deploy_key
         ssh-keyscan -H ${{ inputs.domain }} >> ~/.ssh/known_hosts
 
-    - name: Check if server needs setup
-      id: check_setup
+    - name: Run server setup (idempotent)
       shell: bash
       run: |
-        SETUP_DONE=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-          root@${{ inputs.domain }} \
-          "test -f /usr/local/bin/ensure-cert.sh && test -d /etc/letsencrypt/live/${{ inputs.domain }} && command -v docker >/dev/null 2>&1 && echo 'yes' || echo 'no'")
-        
-        echo "setup_done=$SETUP_DONE" >> $GITHUB_OUTPUT
-        
-        if [ "$SETUP_DONE" = "yes" ]; then
-          echo "✓ Server is already set up"
-        else
-          echo "→ Server needs setup"
-        fi
-
-    - name: Run server setup
-      if: steps.check_setup.outputs.setup_done == 'no' || inputs.force_setup == 'true'
-      shell: bash
-      run: |
-        echo "Setting up server for domain: ${{ inputs.domain }}"
+        echo "Running server setup for domain: ${{ inputs.domain }}"
         
         # Copy setup files from the action's directory to server
         scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
@@ -60,7 +39,7 @@ runs:
           ${{ github.action_path }}/server-setup/nginx-apps.conf \
           root@${{ inputs.domain }}:/tmp/
         
-        # Run setup script
+        # Run setup script (idempotent - skips already-completed steps)
         ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
           root@${{ inputs.domain }} \
           "chmod +x /tmp/setup.sh && /tmp/setup.sh ${{ inputs.domain }} ${{ inputs.letsencrypt_email }}"
