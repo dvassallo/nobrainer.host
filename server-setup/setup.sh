@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# VibeHost Server Setup Script
+# nobrainer.host Server Setup Script
 # Idempotent setup for deploying multiple static web apps with automatic subdomain routing
 # Safe to run multiple times - skips steps that are already complete
 #
@@ -43,7 +43,7 @@ fi
 DOMAIN=$1
 EMAIL=$2
 
-log_info "Starting VibeHost server setup for domain: $DOMAIN"
+log_info "Starting nobrainer.host server setup for domain: $DOMAIN"
 
 # ============================================
 # Step 1: Install packages (idempotent)
@@ -104,7 +104,7 @@ if [ ! -f "/var/www/apps/_root/index.html" ]; then
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VibeHost</title>
+    <title>nobrainer.host</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -136,7 +136,7 @@ if [ ! -f "/var/www/apps/_root/index.html" ]; then
 </head>
 <body>
     <div class="container">
-        <h1>VibeHost</h1>
+        <h1>nobrainer.host</h1>
         <p>Your apps are deployed and ready.</p>
     </div>
 </body>
@@ -383,7 +383,7 @@ rm -f /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 # ============================================
 echo ""
 echo "============================================"
-log_info "VibeHost setup complete!"
+log_info "nobrainer.host setup complete!"
 echo "============================================"
 echo ""
 echo "Server IP: $(hostname -I | awk '{print $1}')"
