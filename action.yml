@@ -1,0 +1,259 @@
+name: 'nobrainer.host'
+description: 'Zero-config deployment for static web apps with automatic subdomain routing and SSL'
+author: 'Daniel Vassallo'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'
+
+inputs:
+  domain:
+    description: 'Your domain name (e.g., example.com)'
+    required: true
+  deploy_key:
+    description: 'SSH private key for server access'
+    required: true
+  letsencrypt_email:
+    description: 'Email for Let''s Encrypt SSL certificate notifications'
+    required: true
+  force_setup:
+    description: 'Force re-run server setup even if already configured'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up SSH
+      shell: bash
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ inputs.deploy_key }}" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keyscan -H ${{ inputs.domain }} >> ~/.ssh/known_hosts
+
+    - name: Check if server needs setup
+      id: check_setup
+      shell: bash
+      run: |
+        SETUP_DONE=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          root@${{ inputs.domain }} \
+          "test -f /usr/local/bin/ensure-cert.sh && test -d /etc/letsencrypt/live/${{ inputs.domain }} && echo 'yes' || echo 'no'")
+        
+        echo "setup_done=$SETUP_DONE" >> $GITHUB_OUTPUT
+        
+        if [ "$SETUP_DONE" = "yes" ]; then
+          echo "✓ Server is already set up"
+        else
+          echo "→ Server needs setup"
+        fi
+
+    - name: Run server setup
+      if: steps.check_setup.outputs.setup_done == 'no' || inputs.force_setup == 'true'
+      shell: bash
+      run: |
+        echo "Setting up server for domain: ${{ inputs.domain }}"
+        
+        # Copy setup files from the action's directory to server
+        scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          ${{ github.action_path }}/server-setup/setup.sh \
+          ${{ github.action_path }}/server-setup/nginx-apps.conf \
+          root@${{ inputs.domain }}:/tmp/
+        
+        # Run setup script
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          root@${{ inputs.domain }} \
+          "chmod +x /tmp/setup.sh && /tmp/setup.sh ${{ inputs.domain }} ${{ inputs.letsencrypt_email }}"
+
+    - name: Generate app index
+      shell: bash
+      run: |
+        # Skip if user has a custom _root/index.html
+        if [ -f "_root/index.html" ]; then
+          echo "Custom _root/index.html found, skipping generation"
+          exit 0
+        fi
+        
+        # Find all app directories (exclude system folders)
+        APPS=$(find . -maxdepth 1 -type d \
+          ! -name '.' \
+          ! -name '.git' \
+          ! -name '.github' \
+          ! -name 'server-setup' \
+          ! -name '_root' \
+          -printf '%f\n' | sort)
+        
+        # Generate _root/index.html
+        mkdir -p _root
+        cat > _root/index.html << 'HTMLEOF'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Apps</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body {
+                    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+                    min-height: 100vh;
+                    background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%);
+                    color: #e8e8e8;
+                    padding: 3rem 1.5rem;
+                }
+                .container {
+                    max-width: 600px;
+                    margin: 0 auto;
+                }
+                h1 {
+                    font-size: 2.5rem;
+                    font-weight: 600;
+                    margin-bottom: 2rem;
+                    background: linear-gradient(135deg, #00d9ff, #00ff88);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    background-clip: text;
+                }
+                .apps {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.75rem;
+                }
+                a {
+                    display: block;
+                    padding: 1rem 1.25rem;
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 12px;
+                    color: #fff;
+                    text-decoration: none;
+                    font-size: 1.1rem;
+                    transition: all 0.2s ease;
+                }
+                a:hover {
+                    background: rgba(255, 255, 255, 0.08);
+                    border-color: rgba(0, 217, 255, 0.3);
+                    transform: translateX(4px);
+                }
+                .empty {
+                    color: rgba(255, 255, 255, 0.5);
+                    font-style: italic;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Apps</h1>
+                <div class="apps">
+        HTMLEOF
+        
+        # Add links for each app
+        DOMAIN="${{ inputs.domain }}"
+        APP_COUNT=0
+        for app in $APPS; do
+            echo "            <a href=\"https://${app}.${DOMAIN}\">${app}</a>" >> _root/index.html
+            APP_COUNT=$((APP_COUNT + 1))
+        done
+        
+        # Handle empty state
+        if [ $APP_COUNT -eq 0 ]; then
+            echo '            <p class="empty">No apps deployed yet.</p>' >> _root/index.html
+        fi
+        
+        # Close HTML
+        cat >> _root/index.html << 'HTMLEOF'
+                </div>
+            </div>
+        </body>
+        </html>
+        HTMLEOF
+        
+        echo "Generated index with $APP_COUNT apps"
+
+    - name: Deploy apps via rsync
+      shell: bash
+      run: |
+        rsync -avz --delete \
+          --exclude '.git' \
+          --exclude '.github' \
+          --exclude 'server-setup' \
+          --exclude 'README.md' \
+          --exclude 'LICENSE' \
+          --exclude '.gitignore' \
+          --exclude '*.md' \
+          -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+          ./ root@${{ inputs.domain }}:/var/www/apps/
+
+    - name: Issue SSL certificates for apps
+      shell: bash
+      run: |
+        DOMAIN="${{ inputs.domain }}"
+        EMAIL="${{ inputs.letsencrypt_email }}"
+        
+        # Find all app directories
+        APPS=$(find . -maxdepth 1 -type d \
+          ! -name '.' \
+          ! -name '.git' \
+          ! -name '.github' \
+          ! -name 'server-setup' \
+          ! -name '_root' \
+          -printf '%f\n' | sort)
+        
+        CERTS_ISSUED=0
+        for app in $APPS; do
+          echo "Ensuring certificate for ${app}.${DOMAIN}..."
+          
+          # Run ensure-cert.sh on the server
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            root@${{ inputs.domain }} \
+            "/usr/local/bin/ensure-cert.sh $app $DOMAIN $EMAIL" && CERTS_ISSUED=$((CERTS_ISSUED + 1)) || true
+        done
+        
+        echo "Processed certificates for $CERTS_ISSUED apps"
+
+    - name: Clean up orphaned certificates
+      shell: bash
+      run: |
+        DOMAIN="${{ inputs.domain }}"
+        
+        # Get list of certs on server and clean up orphaned ones
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          root@${{ inputs.domain }} << CLEANUP_SCRIPT
+        
+        # Find all subdomain certs (exclude root domain cert)
+        for cert_dir in /etc/letsencrypt/live/*.${DOMAIN}; do
+          [ -d "\$cert_dir" ] || continue
+          
+          cert_name=\$(basename "\$cert_dir")
+          # Extract subdomain (remove .domain.com suffix)
+          subdomain=\${cert_name%.${DOMAIN}}
+          
+          # Check if this subdomain still exists as a deployed app
+          if [ ! -d "/var/www/apps/\$subdomain" ]; then
+            echo "Removing orphaned certificate for \$cert_name..."
+            certbot delete --cert-name "\$cert_name" --non-interactive || true
+          fi
+        done
+        CLEANUP_SCRIPT
+        
+        echo "Orphaned certificate cleanup complete"
+
+    - name: Update nginx config and reload
+      shell: bash
+      run: |
+        # Copy latest nginx config from action's directory
+        scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          ${{ github.action_path }}/server-setup/nginx-apps.conf \
+          root@${{ inputs.domain }}:/tmp/nginx-apps.conf
+        
+        # Update config and reload nginx
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          root@${{ inputs.domain }} \
+          "sed 's/DOMAIN_PLACEHOLDER/${{ inputs.domain }}/g' /tmp/nginx-apps.conf > /etc/nginx/sites-available/apps && \
+           ln -sf /etc/nginx/sites-available/apps /etc/nginx/sites-enabled/apps && \
+           nginx -t && systemctl reload nginx"
+
+    - name: Clean up SSH key
+      shell: bash
+      run: rm -f ~/.ssh/deploy_key
+

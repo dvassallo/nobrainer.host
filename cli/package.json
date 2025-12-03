@@ -1,0 +1,26 @@
+{
+  "name": "nobrainer.host",
+  "version": "1.0.0",
+  "description": "CLI for setting up nobrainer.host deployments",
+  "bin": {
+    "nobrainer.host": "./bin/cli.js"
+  },
+  "keywords": [
+    "deploy",
+    "hosting",
+    "static-sites",
+    "github-actions",
+    "ssl",
+    "nginx"
+  ],
+  "author": "Daniel Vassallo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dvassallo/nobrainer.host"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}
+
