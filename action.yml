@@ -1,5 +1,5 @@
 name: 'nobrainer.host'
-description: 'Zero-config deployment for static web apps with automatic subdomain routing and SSL'
+description: 'Zero-config deployment for web apps (static and Docker) with automatic subdomain routing and SSL'
 author: 'Daniel Vassallo'
 
 branding:
@@ -38,7 +38,7 @@ runs:
       run: |
         SETUP_DONE=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
           root@${{ inputs.domain }} \
-          "test -f /usr/local/bin/ensure-cert.sh && test -d /etc/letsencrypt/live/${{ inputs.domain }} && echo 'yes' || echo 'no'")
+          "test -f /usr/local/bin/ensure-cert.sh && test -d /etc/letsencrypt/live/${{ inputs.domain }} && command -v docker >/dev/null 2>&1 && echo 'yes' || echo 'no'")
         
         echo "setup_done=$SETUP_DONE" >> $GITHUB_OUTPUT
         
@@ -250,6 +250,66 @@ runs:
           -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
           ./ root@${{ inputs.domain }}:/var/www/apps/
 
+    - name: Detect and start docker apps
+      id: docker_apps
+      shell: bash
+      run: |
+        DOMAIN="${{ inputs.domain }}"
+        
+        # Find docker apps (folders with docker-compose.yml), sorted alphabetically
+        DOCKER_APPS=$(find . -maxdepth 2 -name "docker-compose.yml" -printf '%h\n' | sed 's|^\./||' | sort)
+        
+        # Assign ports starting at 3000
+        PORT=3000
+        DOCKER_APP_PORTS=""
+        
+        for app in $DOCKER_APPS; do
+          echo "Starting docker app: $app on port $PORT"
+          
+          # Start the docker app on the server
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            root@${{ inputs.domain }} \
+            "cd /var/www/apps/$app && PORT=$PORT docker compose up -d --build --remove-orphans" || true
+          
+          # Track app:port mapping
+          DOCKER_APP_PORTS="${DOCKER_APP_PORTS}${app}:${PORT}\n"
+          PORT=$((PORT + 1))
+        done
+        
+        # Save docker app ports for nginx config generation
+        echo -e "$DOCKER_APP_PORTS" > /tmp/docker_app_ports.txt
+        echo "docker_apps=$DOCKER_APPS" >> $GITHUB_OUTPUT
+        
+        if [ -n "$DOCKER_APPS" ]; then
+          echo "Started docker apps: $DOCKER_APPS"
+        else
+          echo "No docker apps found"
+        fi
+
+    - name: Stop orphaned docker containers
+      shell: bash
+      run: |
+        DOMAIN="${{ inputs.domain }}"
+        
+        # Stop docker containers whose project name doesn't match any app folder
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          root@${{ inputs.domain }} << 'CLEANUP_DOCKER'
+        
+        # Get all docker-compose project names from running containers
+        PROJECTS=$(docker ps --format '{{.Labels}}' 2>/dev/null | grep -oP 'com.docker.compose.project=\K[^,]+' | sort -u || true)
+        
+        for project in $PROJECTS; do
+          # Check if app folder still exists
+          if [ ! -d "/var/www/apps/$project" ]; then
+            echo "Stopping orphaned docker app: $project"
+            cd /var/www/apps 2>/dev/null || true
+            docker compose -p "$project" down --remove-orphans 2>/dev/null || true
+          fi
+        done
+        
+        echo "Orphaned docker container cleanup complete"
+        CLEANUP_DOCKER
+
     - name: Issue SSL certificates for apps
       shell: bash
       run: |
@@ -317,20 +377,153 @@ runs:
         
         echo "Orphaned certificate cleanup complete"
 
-    - name: Update nginx config and reload
+    - name: Generate and update nginx config
       shell: bash
       run: |
-        # Copy latest nginx config from action's directory
-        scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-          ${{ github.action_path }}/server-setup/nginx-apps.conf \
-          root@${{ inputs.domain }}:/tmp/nginx-apps.conf
+        DOMAIN="${{ inputs.domain }}"
         
-        # Update config and reload nginx
+        # Find all apps
+        ALL_APPS=$(find . -maxdepth 1 -type d \
+          ! -name '.' \
+          ! -name '.git' \
+          ! -name '.github' \
+          ! -name 'server-setup' \
+          ! -name '_root' \
+          -printf '%f\n' | sort)
+        
+        # Find docker apps
+        DOCKER_APPS=$(find . -maxdepth 2 -name "docker-compose.yml" -printf '%h\n' | sed 's|^\./||' | sort)
+        
+        # Build nginx config dynamically
+        NGINX_CONFIG=""
+        
+        # HTTP server for ACME challenges and redirect
+        NGINX_CONFIG+="# HTTP - ACME challenges and redirect to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name *.${DOMAIN} ${DOMAIN};
+    
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme-challenge;
+    }
+    
+    location / {
+        return 301 https://\\\$host\\\$request_uri;
+    }
+}
+
+"
+        
+        # Root domain server
+        NGINX_CONFIG+="# Root domain
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${DOMAIN};
+    
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    
+    root /var/www/apps/_root;
+    index index.html;
+    
+    location / {
+        try_files \\\$uri \\\$uri/ =404;
+    }
+}
+
+"
+        
+        # Generate config for each app
+        PORT=3000
+        for app in $ALL_APPS; do
+          # Check if it's a docker app
+          IS_DOCKER=false
+          for docker_app in $DOCKER_APPS; do
+            if [ "$app" = "$docker_app" ]; then
+              IS_DOCKER=true
+              break
+            fi
+          done
+          
+          if [ "$IS_DOCKER" = true ]; then
+            # Docker app - proxy to port
+            NGINX_CONFIG+="# Docker app: ${app} -> port ${PORT}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${app}.${DOMAIN};
+    
+    ssl_certificate /etc/letsencrypt/live/${app}.${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${app}.${DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    
+    location / {
+        proxy_pass http://127.0.0.1:${PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \\\$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \\\$host;
+        proxy_set_header X-Real-IP \\\$remote_addr;
+        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \\\$scheme;
+        proxy_cache_bypass \\\$http_upgrade;
+    }
+}
+
+"
+            PORT=$((PORT + 1))
+          else
+            # Static app - serve files
+            NGINX_CONFIG+="# Static app: ${app}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${app}.${DOMAIN};
+    
+    ssl_certificate /etc/letsencrypt/live/${app}.${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${app}.${DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    
+    root /var/www/apps/${app};
+    index index.html index.htm;
+    
+    add_header X-Frame-Options \"SAMEORIGIN\" always;
+    add_header X-Content-Type-Options \"nosniff\" always;
+    
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
+    
+    location / {
+        try_files \\\$uri \\\$uri/ /index.html =404;
+    }
+    
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)\$ {
+        expires 30d;
+        add_header Cache-Control \"public, immutable\";
+    }
+}
+
+"
+          fi
+        done
+        
+        # Write and apply nginx config
+        echo "$NGINX_CONFIG" | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          root@${{ inputs.domain }} "cat > /etc/nginx/sites-available/apps"
+        
+        # Enable and reload nginx
         ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
           root@${{ inputs.domain }} \
-          "sed 's/DOMAIN_PLACEHOLDER/${{ inputs.domain }}/g' /tmp/nginx-apps.conf > /etc/nginx/sites-available/apps && \
-           ln -sf /etc/nginx/sites-available/apps /etc/nginx/sites-enabled/apps && \
+          "ln -sf /etc/nginx/sites-available/apps /etc/nginx/sites-enabled/apps && \
            nginx -t && systemctl reload nginx"
+        
+        echo "Nginx config updated and reloaded"
 
     - name: Clean up SSH key
       shell: bash

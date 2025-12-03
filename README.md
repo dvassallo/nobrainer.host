@@ -1,13 +1,13 @@
 # nobrainer.host
 
-**Zero-config deployment for static web apps with automatic subdomain routing and SSL.**
+**Zero-config deployment for web apps with automatic subdomain routing and SSL.**
 
-Each folder in your repo becomes a subdomain. No configuration needed when adding new apps.
+Each folder in your repo becomes a subdomain. Supports both static sites and Docker Compose apps.
 
 ```
-/myapp/index.html   →   https://myapp.yourdomain.com
-/blog/index.html    →   https://blog.yourdomain.com
-/portfolio/         →   https://portfolio.yourdomain.com
+/myapp/index.html        →  https://myapp.yourdomain.com  (static)
+/blog/index.html         →  https://blog.yourdomain.com   (static)
+/api/docker-compose.yml  →  https://api.yourdomain.com    (docker)
 ```
 
 ## Quick Start
@@ -26,6 +26,7 @@ This creates a GitHub Actions workflow. Then:
 
 - **Zero-config subdomains**: Add a folder, push, it's live
 - **Automatic SSL**: Let's Encrypt certificates for each subdomain
+- **Static & Docker apps**: Mix static sites and Docker Compose apps
 - **Auto-generated index**: Root domain lists all your apps
 - **No vendor lock-in**: Works with any DNS provider, any VPS
 
@@ -92,12 +93,45 @@ On every push to `main`:
 4. Cleans up certificates for deleted apps
 5. Reloads Nginx
 
-Nginx dynamically routes requests based on subdomain:
+For static apps, Nginx serves files directly. For Docker apps, Nginx proxies to the container.
 
-```nginx
-server_name ~^(?<subdomain>.+)\.example\.com$;
-root /var/www/apps/$subdomain;
+## Docker Compose Apps
+
+To deploy a Docker app, add a `docker-compose.yml` to your app folder:
+
 ```
+/myapi/
+├── docker-compose.yml
+├── Dockerfile
+└── src/
+```
+
+### Port Assignment
+
+Ports are auto-assigned alphabetically starting at 3000. Your app must read the `PORT` environment variable:
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - PORT=${PORT:-3000}
+```
+
+Example port assignments:
+```
+abc/    → port 3000
+blog/   → static (no port, no docker-compose.yml)
+myapi/  → port 3001
+xyz/    → port 3002
+```
+
+### Cleanup
+
+When you delete a Docker app folder, its container is automatically stopped on the next deploy.
 
 ## Using as a GitHub Action
 

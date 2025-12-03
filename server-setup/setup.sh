@@ -65,6 +65,25 @@ else
 fi
 
 # ============================================
+# Step 1b: Install Docker (idempotent)
+# ============================================
+if ! command -v docker &> /dev/null; then
+    log_info "Installing Docker..."
+    apt-get update -qq
+    apt-get install -y -qq ca-certificates curl gnupg
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null || true
+    chmod a+r /etc/apt/keyrings/docker.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+    apt-get update -qq
+    apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    systemctl enable docker
+    systemctl start docker
+else
+    log_skip "Docker already installed"
+fi
+
+# ============================================
 # Step 2: Create directory structure (idempotent)
 # ============================================
 if [ ! -d "/var/www/apps" ]; then
@@ -196,6 +215,50 @@ fi
 CERTSCRIPT
 
 chmod +x /usr/local/bin/ensure-cert.sh
+
+# ============================================
+# Step 3b: Create docker app helper script
+# ============================================
+log_info "Creating docker app helper script..."
+cat > /usr/local/bin/start-docker-app.sh << 'DOCKERSCRIPT'
+#!/bin/bash
+#
+# Start a docker-compose app with a specific port
+# Usage: start-docker-app.sh <app_path> <port>
+# Example: start-docker-app.sh /var/www/apps/myapi 3001
+#
+
+set -e
+
+APP_PATH=$1
+PORT=$2
+
+if [ -z "$APP_PATH" ] || [ -z "$PORT" ]; then
+    echo "Usage: start-docker-app.sh <app_path> <port>"
+    exit 1
+fi
+
+if [ ! -f "$APP_PATH/docker-compose.yml" ]; then
+    echo "No docker-compose.yml found in $APP_PATH"
+    exit 1
+fi
+
+APP_NAME=$(basename "$APP_PATH")
+echo "Starting docker app: $APP_NAME on port $PORT"
+
+cd "$APP_PATH"
+
+# Export PORT for docker-compose to use
+export PORT=$PORT
+
+# Pull latest images and restart
+docker compose pull --quiet 2>/dev/null || true
+docker compose up -d --build --remove-orphans
+
+echo "Docker app $APP_NAME started on port $PORT"
+DOCKERSCRIPT
+
+chmod +x /usr/local/bin/start-docker-app.sh
 
 # ============================================
 # Step 4: Get certificate for root domain
