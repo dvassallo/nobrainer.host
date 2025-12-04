@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nobrainer.host - Zero-config deployment</title>
+    <style>
+        :root {
+            --bg: #0f0f13;
+            --text: #ffffff;
+            --primary: #FF3366;
+            --secondary: #33CCFF;
+            --tertiary: #FFCC00;
+            --card-bg: #1a1a20;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Hero Section */
+        header {
+            padding: 80px 0;
+            text-align: center;
+            position: relative;
+        }
+
+        h1 {
+            font-size: 5rem;
+            line-height: 1;
+            margin-bottom: 20px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--secondary), var(--primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -2px;
+        }
+
+        .tagline {
+            font-size: 1.5rem;
+            color: #888;
+            max-width: 600px;
+            margin: 0 auto 40px;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 15px 30px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.1rem;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-primary {
+            background: var(--text);
+            color: var(--bg);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: var(--text);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        /* Code Block */
+        .code-block {
+            background: #000;
+            border-radius: 12px;
+            padding: 20px;
+            font-family: monospace;
+            font-size: 1.1rem;
+            margin: 40px auto;
+            max-width: 600px;
+            border: 1px solid #333;
+            color: var(--secondary);
+            text-align: left;
+        }
+
+        .comment { color: #666; }
+        .cmd { color: var(--primary); }
+
+        /* Features Grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            padding: 60px 0;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: transform 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        .card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            color: var(--tertiary);
+        }
+
+        /* How it works */
+        .steps {
+            padding: 60px 0;
+        }
+
+        .step {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 30px;
+        }
+
+        .step-num {
+            background: var(--primary);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 20px;
+            flex-shrink: 0;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 60px 0;
+            color: #666;
+            border-top: 1px solid #222;
+            margin-top: 60px;
+        }
+
+        footer a {
+            color: #888;
+            text-decoration: none;
+        }
+
+        @media (max-width: 600px) {
+            h1 { font-size: 3rem; }
+            .features { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>nobrainer.host</h1>
+        <p class="tagline">The easiest way to self-host multiple web apps. <br>Static sites, Docker apps, auto SSL, zero config.</p>
+        
+        <div class="code-block">
+            <span class="cmd">npx nobrainer.host init</span> <span class="comment">--domain your.com --email you@mail.com</span>
+        </div>
+
+        <div class="cta-buttons">
+            <a href="https://github.com/dvassallo/nobrainer.host" class="btn btn-primary">Get Started on GitHub</a>
+            <a href="#how-it-works" class="btn btn-secondary">How it works</a>
+        </div>
+    </header>
+
+    <section class="features">
+        <div class="card">
+            <h3>📁 Folder = Subdomain</h3>
+            <p>Just create a folder named <code>myapp</code> and push. It automatically becomes <code>myapp.yourdomain.com</code>.</p>
+        </div>
+        <div class="card">
+            <h3>🔒 Auto SSL</h3>
+            <p>Free Let's Encrypt certificates are automatically issued and renewed for every subdomain.</p>
+        </div>
+        <div class="card">
+            <h3>🐳 Docker Ready</h3>
+            <p>Drop a <code>docker-compose.yml</code> in a folder. We'll run it, assign a port, and proxy traffic to it.</p>
+        </div>
+        <div class="card">
+            <h3>🚀 GitHub Actions</h3>
+            <p>Runs entirely in your own repo via GitHub Actions. You own the infrastructure. No vendor lock-in.</p>
+        </div>
+    </section>
+
+    <section id="how-it-works" class="steps">
+        <h2 style="font-size: 2.5rem; margin-bottom: 40px; text-align: center;">How it works</h2>
+        
+        <div class="step">
+            <div class="step-num">1</div>
+            <div>
+                <h3>Run the init command</h3>
+                <p>Run <code>npx nobrainer.host init</code> in your project folder. It creates a simple GitHub Action workflow.</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-num">2</div>
+            <div>
+                <h3>Add your SSH key</h3>
+                <p>Add a <code>DEPLOY_KEY</code> secret to your GitHub repo settings so the action can SSH into your VPS.</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-num">3</div>
+            <div>
+                <h3>Push to deploy</h3>
+                <p>Every commit to <code>main</code> syncs your folders to the server. New folders become new subdomains instantly.</p>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <p>Open Source under MIT License</p>
+        <p><a href="https://github.com/dvassallo/nobrainer.host">View on GitHub</a></p>
+        <br>
+        <p>Created by Daniel Vassallo</p>
+    </footer>
+</div>
+
+</body>
+</html>
+
