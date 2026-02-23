@@ -188,31 +188,37 @@ runs:
         set -e
         SUBDOMAIN=$1
         DOMAIN=$2
-        EMAIL=$3
-        
-        if [ -z "$SUBDOMAIN" ] || [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
-            echo "Usage: ensure-cert.sh <subdomain> <domain> <email>"
+        EMAIL=${3:-}
+
+        if [ -z "$SUBDOMAIN" ] || [ -z "$DOMAIN" ]; then
+            echo "Usage: ensure-cert.sh <subdomain> <domain> [email]"
             exit 1
         fi
-        
+
+        if [ -n "$EMAIL" ]; then
+            CERTBOT_EMAIL_ARG="--email $EMAIL"
+        else
+            CERTBOT_EMAIL_ARG="--register-unsafely-without-email"
+        fi
+
         FQDN="${SUBDOMAIN}.${DOMAIN}"
         CERT_PATH="/etc/letsencrypt/live/${FQDN}"
-        
+
         if [ -d "$CERT_PATH" ]; then
             echo "Certificate already exists for ${FQDN}"
             exit 0
         fi
-        
+
         echo "Obtaining certificate for ${FQDN}..."
         certbot certonly \
             --webroot \
             --webroot-path /var/www/acme-challenge \
             -d "$FQDN" \
-            --email "$EMAIL" \
+            $CERTBOT_EMAIL_ARG \
             --agree-tos \
             --non-interactive \
             --quiet
-        
+
         if [ $? -eq 0 ]; then
             echo "Certificate obtained successfully for ${FQDN}"
             chmod 755 /etc/letsencrypt/live/

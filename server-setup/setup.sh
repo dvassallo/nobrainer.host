@@ -28,12 +28,12 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Check arguments
-if [ $# -lt 2 ]; then
-    echo "Usage: $0 <domain> <email>"
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <domain> [email]"
     echo ""
     echo "Arguments:"
     echo "  domain    Your domain name (e.g., example.com)"
-    echo "  email     Email for Let's Encrypt notifications"
+    echo "  email     Email for Let's Encrypt notifications (optional)"
     echo ""
     echo "Example:"
     echo "  $0 example.com admin@example.com"
@@ -41,7 +41,14 @@ if [ $# -lt 2 ]; then
 fi
 
 DOMAIN=$1
-EMAIL=$2
+EMAIL=${2:-}
+
+# Build certbot email argument
+if [ -n "$EMAIL" ]; then
+    CERTBOT_EMAIL_ARG="--email $EMAIL"
+else
+    CERTBOT_EMAIL_ARG="--register-unsafely-without-email"
+fi
 
 log_info "Starting nobrainer.host server setup for domain: $DOMAIN"
 
@@ -163,7 +170,7 @@ cat > /usr/local/bin/ensure-cert.sh << 'CERTSCRIPT'
 #!/bin/bash
 #
 # Ensure SSL certificate exists for a subdomain
-# Usage: ensure-cert.sh <subdomain> <domain> <email>
+# Usage: ensure-cert.sh <subdomain> <domain> [email]
 # Example: ensure-cert.sh myapp example.com admin@example.com
 #
 # Returns 0 if cert exists or was successfully created
@@ -173,11 +180,18 @@ set -e
 
 SUBDOMAIN=$1
 DOMAIN=$2
-EMAIL=$3
+EMAIL=${3:-}
 
-if [ -z "$SUBDOMAIN" ] || [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
-    echo "Usage: ensure-cert.sh <subdomain> <domain> <email>"
+if [ -z "$SUBDOMAIN" ] || [ -z "$DOMAIN" ]; then
+    echo "Usage: ensure-cert.sh <subdomain> <domain> [email]"
     exit 1
+fi
+
+# Build certbot email argument
+if [ -n "$EMAIL" ]; then
+    CERTBOT_EMAIL_ARG="--email $EMAIL"
+else
+    CERTBOT_EMAIL_ARG="--register-unsafely-without-email"
 fi
 
 FQDN="${SUBDOMAIN}.${DOMAIN}"
@@ -196,7 +210,7 @@ certbot certonly \
     --webroot \
     --webroot-path /var/www/acme-challenge \
     -d "$FQDN" \
-    --email "$EMAIL" \
+    $CERTBOT_EMAIL_ARG \
     --agree-tos \
     --non-interactive \
     --quiet
@@ -293,7 +307,7 @@ EOF
         --webroot \
         --webroot-path /var/www/acme-challenge \
         -d "$DOMAIN" \
-        --email "$EMAIL" \
+        $CERTBOT_EMAIL_ARG \
         --agree-tos \
         --non-interactive
     
@@ -346,10 +360,10 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Reload Nginx
-log_info "Reloading Nginx..."
-systemctl reload nginx
+# Restart Nginx (restart instead of reload in case nginx is stopped)
+log_info "Starting Nginx..."
 systemctl enable nginx
+systemctl restart nginx
 
 # ============================================
 # Step 6: Set up automatic certificate renewal (idempotent)
